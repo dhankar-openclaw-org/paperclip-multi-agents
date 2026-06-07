@@ -1,0 +1,37 @@
+running egg_info
+creating ../../build/robot_demo/robot_demo.egg-info
+writing ../../build/robot_demo/robot_demo.egg-info/PKG-INFO
+writing dependency_links to ../../build/robot_demo/robot_demo.egg-info/dependency_links.txt
+writing entry points to ../../build/robot_demo/robot_demo.egg-info/entry_points.txt
+writing requirements to ../../build/robot_demo/robot_demo.egg-info/requires.txt
+writing top-level names to ../../build/robot_demo/robot_demo.egg-info/top_level.txt
+writing manifest file '../../build/robot_demo/robot_demo.egg-info/SOURCES.txt'
+reading manifest file '../../build/robot_demo/robot_demo.egg-info/SOURCES.txt'
+writing manifest file '../../build/robot_demo/robot_demo.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/build/robot_demo/build
+creating /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/build/robot_demo/build/lib
+creating /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/build/robot_demo/build/lib/robot_demo
+copying robot_demo/__init__.py -> /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/build/robot_demo/build/lib/robot_demo
+copying robot_demo/hello_node.py -> /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/build/robot_demo/build/lib/robot_demo
+running install
+running install_lib
+creating /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/lib/python3.10/site-packages/robot_demo
+copying /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/build/robot_demo/build/lib/robot_demo/__init__.py -> /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/lib/python3.10/site-packages/robot_demo
+copying /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/build/robot_demo/build/lib/robot_demo/hello_node.py -> /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/lib/python3.10/site-packages/robot_demo
+byte-compiling /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/lib/python3.10/site-packages/robot_demo/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/lib/python3.10/site-packages/robot_demo/hello_node.py to hello_node.cpython-310.pyc
+running install_data
+creating /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/share/ament_index
+creating /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/share/ament_index/resource_index
+creating /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/share/ament_index/resource_index/packages
+copying resource/robot_demo -> /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/share/ament_index/resource_index/packages
+copying package.xml -> /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/share/robot_demo
+creating /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/share/robot_demo/launch
+copying launch/launch_see_saw_world.py -> /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/share/robot_demo/launch
+running install_egg_info
+Copying ../../build/robot_demo/robot_demo.egg-info to /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/lib/python3.10/site-packages/robot_demo-0.0.0-py3.10.egg-info
+running install_scripts
+Installing hello_node script to /home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/install/robot_demo/lib/robot_demo
+writing list of installed files to '/home/dhankar/temp/26_07__1/rfl__5_30/ros2_ws/build/robot_demo/install.log'

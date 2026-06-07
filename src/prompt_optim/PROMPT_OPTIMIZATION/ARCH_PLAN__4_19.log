@@ -1,0 +1,447 @@
+# PROMPT OPTIMIZATION - HEAVILY INSPIRED BY CAVEMAN 
+# ARCHITECTURAL FLOW — Session 2026-04-19
+
+---
+
+## 1. HIGH-LEVEL PIPELINE
+
+```
+dir_input/compress_target_file_1.py
+         │
+         ▼
+┌─────────────────────────────────────┐
+│  TASK-2: get_code_nl_separate()     │  ← module: code_nl_separator__4_19.py
+│  AST parse + tokenize               │
+└────────────┬──────────────┬─────────┘
+             │              │
+      Code_Only_Str    NL_Only_Str
+             │              │
+             ▼              ▼
+┌─────────────────────────────────────┐
+│  TASK-3: write_to_out_dir_init()    │  ← module: code_nl_separator__4_19.py
+│  Creates timestamped SUB_DIR        │
+│  Writes CODE_ONLY.py + NL_ONLY.md   │
+└──────────────────┬──────────────────┘
+                   │ sub_dir_path
+                   ▼
+┌─────────────────────────────────────┐
+│  TASK-4: compress_natural_          │  ← module: code_nl_separator__4_19.py
+│          language_only()            │
+│  Routes via CALL_OPENAI_API toggle  │
+└─────────┬───────────────────────────┘
+          │
+    ┌─────┴─────┐
+    │           │
+CALL_OPENAI  CALL_CLAUDE
+  = "Yes"     = "Yes"
+    │           │
+    ▼           ▼
+call_opeanAI  call_claude()       ← compact_tokens__4_19.py
+_compress()   (Claude CLI / SDK)
+    │
+    ▼
+result_compress_agent_TIMESTAMP.md   → written to SUB_DIR
+```
+
+---
+
+## 2. MODULE INVENTORY
+
+| Module | Role | Entry Point |
+|---|---|---|
+| `code_nl_separator__4_19.py` | Main orchestrator + NL separator | `main()` |
+| `compact_tokens__4_19.py` | Claude-based compression engine | `compress_file()` |
+| `detect.py` | File-type classifier (NL vs code) | `should_compress()` |
+| `validate.py` | Post-compression integrity checker | `validate()` |
+| `util_logger.py` | Shared logger factory | `setup_logger()` |
+| `agent_eval_1.py` | Placeholder (currently empty) | — |
+
+---
+
+## 3. MODULE DETAILS
+
+---
+
+### 3.1 `code_nl_separator__4_19.py`
+**Purpose:** Top-level orchestrator. Reads a `.py` source file, separates it into code-only and NL-only parts, writes both to disk, then routes NL compression to either OpenAI or Claude.
+
+#### Global Constants
+
+| Name | Default | Purpose |
+|---|---|---|
+| `THIS_DIR` | `Path(__file__).resolve().parent` | Anchor for all relative paths |
+| `CALL_CLAUDE_API` | `"No"` | Toggle — `"Yes"` routes compression to Claude CLI/SDK |
+| `CALL_OPENAI_API` | `"Yes"` | Toggle — `"Yes"` routes compression to OpenAI gpt-4o-mini |
+| `_OPENAI_COMPRESS_LLM` | `None` | Singleton instance of OpenAI LLM (lazy init) |
+
+#### I/O Directories
+
+| Directory | Purpose |
+|---|---|
+| `agent_eval__1/dir_input/` | Source `.py` files to process |
+| `agent_eval__1/dir_out/SUB_DIR_<name>__<TIMESTAMP>/` | Per-run output (CODE_ONLY, NL_ONLY, compressed) |
+
+---
+
+#### Method: `main()`
+- **Signature:** `main() -> None`
+- **Role:** Orchestrator. Calls TASK-2 → TASK-3 → TASK-4 in sequence.
+- **Input:** Hardcoded `dir_input/compress_target_file_1.py`
+- **Output:** Prints paths to SUB_DIR and compressed file.
+- **Flow:**
+  1. Builds `input_filepath` from `THIS_DIR / "dir_input" / "compress_target_file_1.py"`
+  2. Calls `get_code_nl_separate(input_filepath)` → `(code_str, nl_str)`
+  3. Calls `write_to_out_dir_init(code_str, nl_str, input_file)` → `sub_dir`
+  4. Calls `compress_natural_language_only(sub_dir, nl_filename)` → `compressed_path`
+  5. Prints final summary
+
+---
+
+#### Method: `get_code_nl_separate(input_filepath)`
+- **Signature:** `get_code_nl_separate(input_filepath: str) -> tuple[str, str]`
+- **Role:** TASK-2 — Reads a Python source file and splits it into code-only and NL-only parts using AST + tokenizer.
+- **Returns:** `(Code_Only_String, Natural_Language_Only_String)`
+- **Algorithm — 3 Phases:**
+
+  **Phase 1 — AST Extraction** (via `_extract_string_nodes`):
+  - Parses file with `ast.parse()`
+  - Walks AST nodes to detect:
+    - Module/class/function docstrings (`ast.Expr` → `ast.Constant` str)
+    - Variable string assignments (`ast.Assign` → `ast.Constant` or `ast.JoinedStr`)
+    - Return-statement string literals
+  - Records each as `(start_line, end_line, label, raw_text)` span
+
+  **Phase 2 — Tokenizer Extraction** (via `_extract_comment_blocks`):
+  - Uses `tokenize.generate_tokens()` to collect all `COMMENT` tokens
+  - Groups consecutive comment lines; blocks of 3+ lines treated as prose NL
+  - Skips structural markers (`#!/`, `# coding`, `# noqa`, `# type:`, etc.)
+  - Merges non-overlapping comment spans into `nl_spans`
+
+  **Phase 3 — String Construction:**
+  - Iterates all source lines 1-indexed
+  - Lines in NL spans → replaced with placeholder `# [NL_BLOCK_N EXTRACTED — lines X-Y — label]` in code output; raw content appended to NL output with section header
+  - Lines not in any NL span → passed through to code output unchanged
+
+---
+
+#### Helper: `_extract_string_nodes(tree, source_lines, nl_spans)`
+- **Role:** AST walker. Appends `(sl, el, label, raw)` tuples to `nl_spans` for all substantial string literals found in the AST.
+- **Detects:** docstrings (>30 chars or multiline), string assignments (>50 chars or multiline), f-string assignments (2+ lines), return string/f-string literals.
+
+#### Helper: `_extract_comment_blocks(source_text)`
+- **Role:** Tokenizer pass. Returns list of `(sl, el, label, content)` for consecutive `#` comment blocks of 3+ lines.
+- **Skips:** Shebangs, coding declarations, pylint/noqa/type-ignore directives.
+
+#### Helper: `_save_comment_block(block_lines, comment_spans)`
+- **Role:** Formats a validated comment block and appends to `comment_spans`.
+
+#### Helper: `_node_name(node)`
+- **Role:** Returns human-readable label for an AST node (`"module"`, `"class Foo"`, `"def bar()"`).
+
+#### Helper: `_get_assign_target_name(node)`
+- **Role:** Extracts variable name from `ast.Assign` node target.
+
+---
+
+#### Method: `write_to_out_dir_init(code_only_str, nl_only_str, source_filename)`
+- **Signature:** `write_to_out_str(code_only_str: str, nl_only_str: str, source_filename: str) -> str`
+- **Role:** TASK-3 — Creates a timestamped SUB_DIR and writes two output files.
+- **Returns:** Full path to the created `SUB_DIR` as `str`.
+- **Output structure:**
+  ```
+  dir_out/
+    SUB_DIR_<stem>__<YYYYMMDD_HHMMSSh>/
+      <stem>__CODE_ONLY.py    ← code-only content
+      <stem>__NL_ONLY.md      ← NL-only content
+  ```
+- Logs file sizes after each write.
+
+---
+
+#### Method: `compress_natural_language_only(sub_dir_path, nl_filename)`
+- **Signature:** `compress_natural_language_only(sub_dir_path: str, nl_filename: str) -> str`
+- **Role:** TASK-4 — Reads the NL-only `.md` file, routes to the active compression backend, returns path to the compressed output file.
+- **Returns:** Path to compressed output file.
+- **Routing Logic:**
+  ```
+  if CALL_OPENAI_API == "Yes":
+      → call_opeanAI_compress(nl_text, sub_dir_path)   [returns output path; exits early]
+  elif CALL_CLAUDE_API == "Yes":
+      → build_compress_prompt(nl_text) → call_claude(prompt)
+        → writes <stem>__COMPRESSED__<TIMESTAMP>.md
+  else:
+      → raises ValueError
+  ```
+- Imports `call_claude`, `build_compress_prompt`, `strip_llm_wrapper` from `compact_tokens__4_19` at call-time.
+
+---
+
+#### Method: `_build_openai_compress_model()`
+- **Signature:** `_build_openai_compress_model() -> LLM`
+- **Role:** Constructs the OpenAI LLM instance via `langchain.chat_models.init_chat_model`.
+- **Model:** `gpt-4o-mini`, `temperature=0.0`
+- **Pattern:** Mirrors `build_eval_model()` in `proj_root__1/src_1/eval_agents.py`
+
+#### Method: `_get_openai_compress_llm()`
+- **Signature:** `_get_openai_compress_llm() -> LLM`
+- **Role:** Lazy singleton getter. Builds model once; returns cached instance on all subsequent calls.
+- **Pattern:** Mirrors `_get_eval_llm()` in `proj_root__1/src_1/eval_agents.py`
+
+#### Method: `_build_openai_compress_prompt(original)`
+- **Signature:** `_build_openai_compress_prompt(original: str) -> str`
+- **Role:** Constructs the compression prompt for OpenAI. Enhanced over `build_compress_prompt()` in `compact_tokens__4_19.py`.
+- **Improvements over Claude prompt:**
+  - Drops articles aggressively
+  - Explicit phrase-replacement rules (`"in order to"` → `"to"`, etc.)
+  - Collapses multi-line bullet lists where meaning preserved
+  - Enforces max 1 blank line between sections
+  - Omits courtesy phrases (`"please note"`, `"keep in mind"`)
+  - Converts word numbers to numerals, abbreviates units
+- **Preserved (hard rules):** code blocks, inline backticks, URLs, headings, file paths, shell commands
+
+#### Method: `call_opeanAI_compress(nl_text, sub_dir_path)`
+- **Signature:** `call_opeanAI_compress(nl_text: str, sub_dir_path: str) -> str`
+- **Role:** TASK-8 — Compresses NL text via OpenAI LLM; writes result to `SUB_DIR`.
+- **Returns:** Full path to the written compressed file.
+- **Output file:** `<sub_dir_path>/result_compress_agent_<YYYYMMDD_HHMMSSh>.md`
+- **Flow:**
+  1. Gets LLM via `_get_openai_compress_llm()`
+  2. Builds prompt via `_build_openai_compress_prompt(nl_text)`
+  3. Calls `llm.invoke([HumanMessage(content=prompt)])`
+  4. Extracts `response.content`
+  5. Logs compression ratio `(1 - compressed_size / input_size) * 100`
+  6. Writes output file with timestamp
+
+---
+
+### 3.2 `compact_tokens__4_19.py`
+**Purpose:** Claude-based compression engine. Originally the standalone compress script; now consumed by `code_nl_separator__4_19.py` when `CALL_CLAUDE_API = "Yes"`.
+
+#### Global Constants
+
+| Name | Value | Purpose |
+|---|---|---|
+| `MAX_RETRIES` | `2` | Max fix-retry attempts after validation failure |
+| `SENSITIVE_BASENAME_REGEX` | Regex | Blocks compression of secrets/key files |
+| `SENSITIVE_PATH_COMPONENTS` | frozenset | Blocks `.ssh`, `.aws`, `.gnupg`, etc. |
+| `SENSITIVE_NAME_TOKENS` | tuple | Blocks files named `*secret*`, `*password*`, etc. |
+| `OUTER_FENCE_REGEX` | Regex | Strips outer ` ```markdown ``` ` wrapper from LLM output |
+
+#### Method: `is_sensitive_path(filepath)`
+- **Signature:** `is_sensitive_path(filepath: Path) -> bool`
+- **Role:** Heuristic denylist — returns `True` if file looks like credentials/keys.
+- **Checks:** basename regex, path components, name token scan (normalized separators).
+
+#### Method: `strip_llm_wrapper(text)`
+- **Signature:** `strip_llm_wrapper(text: str) -> str`
+- **Role:** Strips outer ` ```markdown ... ``` ` fence that some LLMs add around the entire response. Returns inner content unchanged if no outer fence.
+
+#### Method: `call_claude(prompt)`
+- **Signature:** `call_claude(prompt: str) -> str`
+- **Role:** Sends prompt to Claude. Two-tier strategy:
+  1. If `ANTHROPIC_API_KEY` env var set → uses `anthropic` Python SDK (`claude-sonnet-4-5` or `CAVEMAN_MODEL` env override)
+  2. Fallback → subprocess `claude --print` CLI (handles desktop auth)
+- **Returns:** Compressed text with outer fence stripped.
+
+#### Method: `build_compress_prompt(original)`
+- **Signature:** `build_compress_prompt(original: str) -> str`
+- **Role:** Basic caveman compression prompt for Claude.
+- **Rules:** No code-block modification, preserve URLs/headings/paths, no outer fence wrapper, compress NL prose only.
+
+#### Method: `build_fix_prompt(original, compressed, errors)`
+- **Signature:** `build_fix_prompt(original: str, compressed: str, errors: List[str]) -> str`
+- **Role:** Repair prompt sent to Claude when `validate()` finds errors in the compressed output. Lists specific errors; instructs model to fix ONLY those, not recompress.
+
+#### Method: `compress_file(filepath)`
+- **Signature:** `compress_file(filepath: Path) -> bool`
+- **Role:** Full compress-validate-retry cycle for a single file.
+- **Flow:**
+  1. Resolve + validate path (existence, 500KB size limit)
+  2. Call `should_compress(filepath)` — skip non-NL files
+  3. Read original text; create `.original.md` backup (refuses if backup already exists)
+  4. Call `call_claude(build_compress_prompt(original_text))` → `compressed`
+  5. Write compressed to original path
+  6. **Retry loop** (up to `MAX_RETRIES`):
+     - Call `validate(backup_path, filepath)` → `ValidationResult`
+     - If valid: break
+     - If invalid: call `call_claude(build_fix_prompt(...))`, write fixed text, retry
+     - On final failure: restore original, delete backup, return `False`
+  7. Return `True` on success
+
+---
+
+### 3.3 `detect.py`
+**Purpose:** Classifies files as `natural_language`, `code`, `config`, or `unknown`. Gate used by `compress_file()` to skip non-NL files.
+
+#### Constants
+
+| Name | Purpose |
+|---|---|
+| `COMPRESSIBLE_EXTENSIONS` | `.md`, `.txt`, `.markdown`, `.rst` → always NL |
+| `SKIP_EXTENSIONS` | `.py`, `.js`, `.json`, `.yaml`, etc. → code/config |
+| `CODE_PATTERNS` | Regex list for import/def/class/bracket lines |
+
+#### Method: `detect_file_type(filepath)`
+- **Signature:** `detect_file_type(filepath: Path) -> str`
+- **Role:** Primary classifier.
+- **Logic:**
+  1. Extension-based fast path (COMPRESSIBLE / SKIP lists)
+  2. Extensionless files: JSON parse attempt, YAML heuristic (60% of first 30 lines), code-line ratio (>40% code lines)
+  3. Returns one of: `"natural_language"`, `"code"`, `"config"`, `"unknown"`
+
+#### Method: `_is_code_line(line)`
+- **Signature:** `_is_code_line(line: str) -> bool`
+- **Role:** Returns `True` if line matches any `CODE_PATTERNS` regex.
+
+#### Method: `_is_json_content(text)`
+- **Signature:** `_is_json_content(text: str) -> bool`
+- **Role:** Attempts `json.loads()` on first 10,000 chars; returns `True` if valid JSON.
+
+#### Method: `_is_yaml_content(lines)`
+- **Signature:** `_is_yaml_content(lines: list[str]) -> bool`
+- **Role:** Checks if >60% of first 30 non-empty lines match YAML patterns (`---`, `key: val`, `- item: val`).
+
+#### Method: `should_compress(filepath)`
+- **Signature:** `should_compress(filepath: Path) -> bool`
+- **Role:** Public API. Returns `True` only if file exists, is not a `.original.md` backup, and `detect_file_type` returns `"natural_language"`.
+
+---
+
+### 3.4 `validate.py`
+**Purpose:** Post-compression integrity checker. Verifies that the compressed output preserves headings, code blocks, URLs, paths, and bullet density relative to the original.
+
+#### Class: `ValidationResult`
+| Attribute | Type | Purpose |
+|---|---|---|
+| `is_valid` | `bool` | `True` until `add_error()` called |
+| `errors` | `list[str]` | Hard failures (block `compress_file` from keeping output) |
+| `warnings` | `list[str]` | Soft issues (logged but do not fail validation) |
+
+#### Extractors
+
+| Method | Returns | Detects |
+|---|---|---|
+| `extract_headings(text)` | `list[(level, title)]` | All `#`-prefixed headings |
+| `extract_code_blocks(text)` | `list[str]` | Fenced ` ``` ` and `~~~` blocks (CommonMark nested fence support) |
+| `extract_urls(text)` | `set[str]` | `https?://` URLs |
+| `extract_paths(text)` | `set[str]` | File paths (`./`, `../`, `/`, `C:\`, or `word/word`) |
+| `count_bullets(text)` | `int` | Count of `- `, `* `, `+ ` bullet items |
+
+#### Validators
+
+| Method | Error/Warning | Condition |
+|---|---|---|
+| `validate_headings` | ERROR if count differs; WARNING if text/order differs | Heading preservation |
+| `validate_code_blocks` | ERROR if blocks not identical | Exact code block preservation |
+| `validate_urls` | ERROR if any URL lost or added | URL preservation |
+| `validate_paths` | WARNING if path set differs | Path preservation |
+| `validate_bullets` | WARNING if bullet count changes >15% | Bullet density |
+
+#### Method: `validate(original_path, compressed_path)`
+- **Signature:** `validate(original_path: Path, compressed_path: Path) -> ValidationResult`
+- **Role:** Reads both files; runs all 5 validators; returns aggregated `ValidationResult`.
+
+---
+
+### 3.5 `util_logger.py`
+**Purpose:** Shared logger factory. Returns a `logging.Logger` instance writing to a timestamped hourly rotating log file under `../proj_root__eval__logs_dir/`.
+
+#### Method: `setup_logger(module_name)`
+- **Signature:** `setup_logger(module_name: str = None) -> logging.Logger`
+- **Role:** Configures and returns a named logger using `logging.config.dictConfig`.
+- **Log path:** `../proj_root__eval__logs_dir/proj_root__eval__log_<MM_DD_YYYY_HH>00h_.log`
+- **Rotation:** Midnight, daily, 31-day backupCount
+- **Level:** `DEBUG`
+- **Format:** `%(asctime)s - %(levelname)s - %(filename)s - %(funcName)s() - Line: %(lineno)d - %(message)s`
+
+---
+
+## 4. COMPLETE CALL GRAPH
+
+```
+main()
+ ├── get_code_nl_separate(input_filepath)
+ │    ├── ast.parse(source_text)
+ │    ├── _extract_string_nodes(tree, source_lines, nl_spans)
+ │    │    ├── _node_name(node)
+ │    │    └── _get_assign_target_name(node)
+ │    ├── _extract_comment_blocks(source_text)
+ │    │    └── _save_comment_block(block_lines, comment_spans)
+ │    └── returns (code_only_str, nl_only_str)
+ │
+ ├── write_to_out_dir_init(code_str, nl_str, input_file)
+ │    └── returns sub_dir_path
+ │
+ └── compress_natural_language_only(sub_dir, nl_filename)
+      ├── [imports] compact_tokens__4_19: call_claude, build_compress_prompt, strip_llm_wrapper
+      │
+      ├── if CALL_OPENAI_API == "Yes":
+      │    └── call_opeanAI_compress(nl_text, sub_dir_path)
+      │         ├── _get_openai_compress_llm()
+      │         │    └── _build_openai_compress_model()  [lazy, once]
+      │         ├── _build_openai_compress_prompt(nl_text)
+      │         ├── llm.invoke([HumanMessage(content=prompt)])
+      │         └── writes result_compress_agent_TIMESTAMP.md → returns path
+      │
+      └── elif CALL_CLAUDE_API == "Yes":
+           ├── build_compress_prompt(nl_text)            [compact_tokens__4_19]
+           ├── call_claude(prompt)                       [compact_tokens__4_19]
+           │    ├── anthropic SDK  [if ANTHROPIC_API_KEY set]
+           │    └── subprocess claude --print  [fallback]
+           └── writes <stem>__COMPRESSED__TIMESTAMP.md → returns path
+```
+
+---
+
+## 5. OUTPUT FILE NAMING CONVENTIONS
+
+| File | Location | Pattern |
+|---|---|---|
+| Code-only | `dir_out/SUB_DIR_.../` | `<stem>__CODE_ONLY.py` |
+| NL-only | `dir_out/SUB_DIR_.../` | `<stem>__NL_ONLY.md` |
+| Claude compressed | `dir_out/SUB_DIR_.../` | `<stem>__NL_ONLY__COMPRESSED__<TIMESTAMP>.md` |
+| OpenAI compressed | `dir_out/SUB_DIR_.../` | `result_compress_agent_<TIMESTAMP>.md` |
+| SUB_DIR itself | `dir_out/` | `SUB_DIR_<stem>__<YYYYMMDD_HHMMSSh>/` |
+| Log files | `../proj_root__eval__logs_dir/` | `proj_root__eval__log_<MM_DD_YYYY_HH>00h_.log` |
+
+**Timestamp format:** `YYYYMMDD_HHMMSSh` (e.g., `20260419_192500h`)
+
+---
+
+## 6. API TOGGLE MATRIX
+
+| `CALL_CLAUDE_API` | `CALL_OPENAI_API` | Behaviour |
+|---|---|---|
+| `"No"` | `"Yes"` | **Default** — OpenAI gpt-4o-mini compression; output = `result_compress_agent_TIMESTAMP.md` |
+| `"Yes"` | `"No"` | Claude CLI/SDK compression; output = `<stem>__COMPRESSED__TIMESTAMP.md` |
+| `"Yes"` | `"Yes"` | OpenAI takes precedence (checked first); Claude branch unreachable |
+| `"No"` | `"No"` | Raises `ValueError` — no backend available |
+
+---
+
+## 7. EXTERNAL DEPENDENCIES
+
+| Library | Used In | Purpose |
+|---|---|---|
+| `langchain` (`init_chat_model`) | `code_nl_separator__4_19.py` | Build OpenAI LLM client |
+| `langchain_core.messages` (`HumanMessage`) | `code_nl_separator__4_19.py` | Wrap prompt for `llm.invoke()` |
+| `anthropic` | `compact_tokens__4_19.py` | Claude SDK (optional; falls back to CLI) |
+| `ast`, `tokenize`, `io` | `code_nl_separator__4_19.py` | Python source parsing |
+| `re`, `json` | `detect.py`, `validate.py` | Pattern matching, JSON detection |
+| `logging`, `logging.config` | `util_logger.py` | Structured rotating log output |
+
+---
+
+## 8. DEVIATION FROM ORIGINAL PLAN (`code_exec_plan__4_19.md`)
+
+| Plan Item | Actual Implementation | Notes |
+|---|---|---|
+| Call `compress_file()` from `compact_tokens__4_19` | Imports `call_claude`, `build_compress_prompt`, `strip_llm_wrapper` directly | Plan already flagged this as preferred alternative |
+| Relative imports fixed in `compact_tokens__4_19.py` | Fixed (lines 71, 73) — `from detect import ...` / `from validate import ...` | Change log entry: 2026-04-19 19:23 IST |
+| Single `compress_natural_language_only()` method | Method retained; routing logic added for TASK-7 toggles | `CALL_OPENAI_API` / `CALL_CLAUDE_API` globals added |
+| No OpenAI path in plan | OpenAI path added as TASK-7 + TASK-8 | `call_opeanAI_compress()` + `_build_openai_compress_model()` singleton added |
+| Hardcoded absolute paths in `main()` | All paths changed to `THIS_DIR`-relative (TASK-5) | Cross-platform compatible |
+
+---
+
+*End of ARCH_PLAN__4_19.log*

@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+
+<sdf version="1.6">
+
+  <model name="red_cube">
+
+    <static>false</static>
+
+    <link name="cube_link">
+
+      <inertial>
+        <mass>5.0</mass>
+      </inertial>
+
+      <collision name="collision">
+        <geometry>
+          <box>
+            <size>1 5 1</size>
+          </box>
+        </geometry>
+      </collision>
+
+      <visual name="visual">
+
+        <geometry>
+          <box>
+            <size>1 1 1</size>
+          </box>
+        </geometry>
+
+        <material>
+          <ambient>1 0 0 1</ambient>
+          <diffuse>1 0 0 1</diffuse>
+        </material>
+
+      </visual>
+
+    </link>
+
+  </model>
+
+</sdf>
