@@ -1,16 +1,13 @@
-# Tmux Multi Agentic Windows 
-- /src/static_images/readme_images
-
 
 #
 
 <p align="center">
-    <img src="ht_.png" width= "650px">
+    <img src="https://github.com/dhankar-openclaw-org/paperclip-multi-agents/blob/feature/dev_rohit/src/static_images/readme_images/tmux_claw_.png" width= "650px">
 </p>
 
 #
 
-<h1 align="center">Multi-agent systems experiment for paperclip maximization.
+<h1 align="center">Multi-agent Orch - Paperclip.
 </h1>
 
 > This repository will contain both code and additional links to code / reading material refrences for  Multi-agent systems experiment for paperclip maximization. ** Multi Agentic Orch**
